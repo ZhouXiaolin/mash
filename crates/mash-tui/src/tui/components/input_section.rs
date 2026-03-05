@@ -4,7 +4,7 @@ use iocraft::prelude::*;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
-use mash_core::protocol::{ClientMessage, SkillEntry};
+use mashd::protocol::{ClientMessage, SkillEntry};
 
 use crate::tui::{AppContext, AppMessage};
 

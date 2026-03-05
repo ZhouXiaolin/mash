@@ -10,7 +10,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::{Mutex, broadcast};
 
-use mash_core::protocol::{DaemonMessage, SessionInfo, SkillEntry};
+use mashd::protocol::{DaemonMessage, SessionInfo, SkillEntry};
 
 /// Messages broadcast between TUI components (internal to client).
 #[derive(Debug, Clone)]

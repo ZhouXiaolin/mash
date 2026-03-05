@@ -4,7 +4,7 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
-mash-core = { path = "../mash-core" }
+mashd = { path = "../mashd" }
 anyhow.workspace = true
 clap.workspace = true
 crossterm.workspace = true

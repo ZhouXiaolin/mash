@@ -6,8 +6,8 @@ use clap::{Parser, Subcommand};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::time::timeout;
 
-use mash_core::mcp::McpManager;
-use mash_core::protocol::{ClientMessage, DaemonMessage};
+use mashd::mcp::McpManager;
+use mashd::protocol::{ClientMessage, DaemonMessage};
 
 #[derive(Parser)]
 #[command(name = "mash", version, about = "A minimal Claude agent")]
