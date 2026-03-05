@@ -29,6 +29,11 @@ fn build_commands(skills: &[SkillEntry]) -> Vec<SlashCommand> {
             builtin: true,
         },
         SlashCommand {
+            name: "mcp".to_string(),
+            description: "列出所有 MCP 服务器及工具".to_string(),
+            builtin: true,
+        },
+        SlashCommand {
             name: "msg".to_string(),
             description: "向其他会话发送消息 /msg <id> <text>".to_string(),
             builtin: true,
@@ -83,6 +88,12 @@ fn try_builtin(
     if trimmed == "/sessions" {
         let _ = ui_sender.send(AppMessage::UserMessage("/sessions".to_string()));
         send_to_daemon(socket_writer.clone(), ClientMessage::ListSessions);
+        return true;
+    }
+
+    if trimmed == "/mcp" {
+        let _ = ui_sender.send(AppMessage::UserMessage("/mcp".to_string()));
+        send_to_daemon(socket_writer.clone(), ClientMessage::ListMcp);
         return true;
     }
 

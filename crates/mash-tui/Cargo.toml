@@ -3,6 +3,10 @@ name = "mash-tui"
 edition.workspace = true
 version.workspace = true
 
+[[bin]]
+name = "mash"
+path = "src/main.rs"
+
 [dependencies]
 mashd = { path = "../mashd" }
 anyhow.workspace = true

@@ -10,7 +10,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::{Mutex, broadcast};
 
-use mashd::protocol::{DaemonMessage, SessionInfo, SkillEntry};
+use mashd::protocol::{DaemonMessage, McpServerInfo, SessionInfo, SkillEntry};
 
 /// Messages broadcast between TUI components (internal to client).
 #[derive(Debug, Clone)]
@@ -25,6 +25,7 @@ pub enum AppMessage {
     TasksUpdated { done: usize, total: usize },
     TaskContent(String),
     SessionList(Vec<SessionInfo>),
+    McpList(Vec<McpServerInfo>),
     PeerMessage { from: String, text: String },
 }
 
@@ -99,6 +100,7 @@ pub async fn run(stream: UnixStream) -> Result<()> {
                 DaemonMessage::AgentCompleted => AppMessage::AgentCompleted,
                 DaemonMessage::AgentError { message } => AppMessage::AgentError(message),
                 DaemonMessage::SessionList { sessions } => AppMessage::SessionList(sessions),
+                DaemonMessage::McpList { servers } => AppMessage::McpList(servers),
                 DaemonMessage::PeerMessage { from, text } => AppMessage::PeerMessage { from, text },
                 DaemonMessage::Welcome { .. } | DaemonMessage::McpResult { .. } => continue,
             };

@@ -284,6 +284,10 @@ impl McpManager {
     pub fn iter_servers_and_tools(&self) -> impl Iterator<Item = (String, &[McpTool])> + '_ {
         self.clients.iter().map(|(n, c)| (n.clone(), c.tools()))
     }
+
+    pub fn clients_iter(&self) -> impl Iterator<Item = (&String, &McpClient)> {
+        self.clients.iter()
+    }
 }
 
 // ── Prompt formatting ─────────────────────────────────────────────

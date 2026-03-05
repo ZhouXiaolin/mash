@@ -135,6 +135,20 @@ pub fn App(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                     }
                     stdout_msgs.println("");
                 }
+                AppMessage::McpList(servers) => {
+                    if servers.is_empty() {
+                        stdout_msgs.println("\x1b[1mNo MCP servers connected.\x1b[0m");
+                    } else {
+                        stdout_msgs.println("\x1b[1mMCP servers:\x1b[0m");
+                        for s in &servers {
+                            stdout_msgs.println(format!("  \x1b[33m{}\x1b[0m ({} tools)", s.name, s.tools.len()));
+                            for tool in &s.tools {
+                                stdout_msgs.println(format!("    - {tool}"));
+                            }
+                        }
+                    }
+                    stdout_msgs.println("");
+                }
                 AppMessage::PeerMessage { from, text } => {
                     stdout_msgs.println(format!("\x1b[35m◀ [{}] {}\x1b[0m", from, text));
                 }

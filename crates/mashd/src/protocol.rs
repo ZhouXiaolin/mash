@@ -14,6 +14,13 @@ pub struct SessionInfo {
     pub busy: bool,
 }
 
+/// Summary of an MCP server and its tools.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServerInfo {
+    pub name: String,
+    pub tools: Vec<String>,
+}
+
 /// Messages from client to daemon (JSON Lines over Unix socket).
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -29,6 +36,8 @@ pub enum ClientMessage {
     ClearHistory,
     /// List all active sessions on the daemon.
     ListSessions,
+    /// List all MCP servers and their tools.
+    ListMcp,
     /// Send a text message to another session.
     SendToSession { target: String, text: String },
     /// Call an MCP tool via the daemon.
@@ -69,6 +78,8 @@ pub enum DaemonMessage {
     AgentError { message: String },
     /// Response to ListSessions.
     SessionList { sessions: Vec<SessionInfo> },
+    /// Response to ListMcp.
+    McpList { servers: Vec<McpServerInfo> },
     /// A message received from another session.
     PeerMessage { from: String, text: String },
     /// Response to McpCall.

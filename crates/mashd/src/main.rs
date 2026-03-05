@@ -12,7 +12,7 @@ use tokio::sync::{Mutex, broadcast};
 use mash_ai::{Message, MessageContent, Role};
 use mashd::agent::{self, AgentConfig, AgentEvent};
 use mashd::mcp::McpManager;
-use mashd::protocol::{ClientMessage, DaemonMessage, SessionInfo, SkillEntry};
+use mashd::protocol::{ClientMessage, DaemonMessage, McpServerInfo, SessionInfo, SkillEntry};
 use mashd::skills;
 use mashd::tasks;
 
@@ -314,6 +314,17 @@ async fn handle_message(
                 })
                 .collect();
             let _ = send_msg(writer, &DaemonMessage::SessionList { sessions: list }).await;
+        }
+        ClientMessage::ListMcp => {
+            let mcp = shared.mcp.lock().await;
+            let servers: Vec<McpServerInfo> = mcp
+                .clients_iter()
+                .map(|(name, client)| McpServerInfo {
+                    name: name.clone(),
+                    tools: client.tools().iter().map(|t| t.name.clone()).collect(),
+                })
+                .collect();
+            let _ = send_msg(writer, &DaemonMessage::McpList { servers }).await;
         }
         ClientMessage::SendToSession { target, text } => {
             let sessions = shared.sessions.lock().await;

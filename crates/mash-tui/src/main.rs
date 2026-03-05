@@ -1,3 +1,4 @@
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -112,8 +113,8 @@ async fn run_client() -> Result<()> {
             auto_start_daemon()?;
 
             let mut connected = None;
-            for _ in 0..50 {
-                tokio::time::sleep(Duration::from_millis(100)).await;
+            for _ in 0..300 {
+                tokio::time::sleep(Duration::from_secs(1)).await;
                 if let Ok(s) = tokio::net::UnixStream::connect(&sock).await {
                     connected = Some(s);
                     break;
@@ -144,6 +145,7 @@ fn auto_start_daemon() -> Result<()> {
     std::process::Command::new(cmd)
         .stdout(log_file.try_clone()?)
         .stderr(log_file)
+        .process_group(0)
         .spawn()?;
 
     Ok(())
@@ -367,8 +369,8 @@ async fn cmd_agent(prompt: &str, system_extra: Option<&str>) -> Result<()> {
             auto_start_daemon()?;
 
             let mut connected = None;
-            for _ in 0..50 {
-                tokio::time::sleep(Duration::from_millis(100)).await;
+            for _ in 0..300 {
+                tokio::time::sleep(Duration::from_secs(1)).await;
                 if let Ok(s) = tokio::net::UnixStream::connect(&sock).await {
                     connected = Some(s);
                     break;
