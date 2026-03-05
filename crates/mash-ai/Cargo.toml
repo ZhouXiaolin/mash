@@ -1,0 +1,15 @@
+[package]
+name = "mash-ai"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+futures-core = "0.3"
+async-stream = "0.3"
+tokio-stream = "0.1"
+bytes = "1"

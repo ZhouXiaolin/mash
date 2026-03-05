@@ -1,0 +1,14 @@
+[package]
+name = "mash"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+mash-core = { path = "../mash-core" }
+anyhow.workspace = true
+clap.workspace = true
+crossterm.workspace = true
+dirs.workspace = true
+iocraft.workspace = true
+serde_json.workspace = true
+tokio.workspace = true

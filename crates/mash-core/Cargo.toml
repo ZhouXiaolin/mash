@@ -1,0 +1,17 @@
+[package]
+name = "mash-core"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-stream.workspace = true
+dirs.workspace = true
+futures-core.workspace = true
+mash-agent.workspace = true
+mash-ai.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true

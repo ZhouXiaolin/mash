@@ -1,0 +1,7 @@
+/target
+.serena
+Cargo.lock
+.claude
+node_modules
+.DS_Store
+.worktrees

@@ -1,0 +1,12 @@
+[package]
+name = "mashd"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+mash-ai.workspace = true
+mash-core = { path = "../mash-core" }
+anyhow.workspace = true
+dirs.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
