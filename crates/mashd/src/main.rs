@@ -10,11 +10,11 @@ use tokio::net::UnixListener;
 use tokio::sync::{Mutex, broadcast};
 
 use mash_ai::{Message, MessageContent, Role};
-use mash_core::agent::{self, AgentConfig, AgentEvent};
-use mash_core::mcp::McpManager;
-use mash_core::protocol::{ClientMessage, DaemonMessage, SessionInfo, SkillEntry};
-use mash_core::skills;
-use mash_core::tasks;
+use mashd::agent::{self, AgentConfig, AgentEvent};
+use mashd::mcp::McpManager;
+use mashd::protocol::{ClientMessage, DaemonMessage, SessionInfo, SkillEntry};
+use mashd::skills;
+use mashd::tasks;
 
 // ── Shared state (global, all sessions) ─────────────────────────
 
@@ -129,7 +129,7 @@ async fn main() -> Result<()> {
     let system_prompt_base = format!(
         "{}{}{}",
         agent::SYSTEM_PROMPT,
-        mash_core::mcp::format_mcp_tools_for_prompt(&*mcp.lock().await),
+        mashd::mcp::format_mcp_tools_for_prompt(&*mcp.lock().await),
         skills::format_skills_for_prompt(&raw_skills),
     );
 

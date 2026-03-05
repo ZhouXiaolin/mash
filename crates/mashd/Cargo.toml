@@ -3,10 +3,23 @@ name = "mashd"
 edition.workspace = true
 version.workspace = true
 
+[lib]
+name = "mashd"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mashd"
+path = "src/main.rs"
+
 [dependencies]
+mash-agent.workspace = true
 mash-ai.workspace = true
-mash-core = { path = "../mash-core" }
 anyhow.workspace = true
+async-stream.workspace = true
 dirs.workspace = true
+futures-core.workspace = true
+reqwest.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+tokio-stream.workspace = true
