@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/mash-ai", "crates/mash-agent", "crates/mash-core", "crates/mashd", "crates/mash"]
+members = ["crates/mash-ai", "crates/mash-agent", "crates/mash-core", "crates/mashd", "crates/mash-tui"]
 resolver = "3"
 
 [workspace.package]

@@ -124,7 +124,7 @@ async fn run_client() -> Result<()> {
         }
     };
 
-    mash::tui::run(stream).await
+    mash_tui::tui::run(stream).await
 }
 
 fn auto_start_daemon() -> Result<()> {
