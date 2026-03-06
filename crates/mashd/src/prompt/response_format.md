@@ -2,9 +2,9 @@
 
 Start every response with:
 ```
-`★ Insight ─────────────────────────────────────`
+`★ Insight ─────────────────────────────────────────`
 [2-3 lines of key design decisions/thoughts/insights]
-`─────────────────────────────────────────────────`
+`───────────────────────────────────────────────────`
 ```
 Then provide the detailed response.
 

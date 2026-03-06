@@ -3,13 +3,41 @@ use iocraft::prelude::*;
 use crate::tui::pages::main_page::MainPage;
 use crate::tui::{AppContext, AppMessage};
 
-/// Replace backtick-wrapped segments with bright-blue ANSI output.
+/// Render inline markdown: `code` → bright blue, **bold** → egg-yolk yellow.
+/// Both markers are hidden in the output.
 fn highlight_inline_code(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
     let mut chars = input.char_indices().peekable();
 
     while let Some(&(i, ch)) = chars.peek() {
-        if ch == '`' {
+        // **bold**
+        if ch == '*' && input[i..].starts_with("**") {
+            chars.next(); // first *
+            chars.next(); // second *
+            let start = i + 2;
+            let mut found_close = false;
+            while let Some(&(j, c)) = chars.peek() {
+                if c == '*' && input[j..].starts_with("**") {
+                    let bold_text = &input[start..j];
+                    if !bold_text.is_empty() {
+                        result.push_str("\x1b[33m");
+                        result.push_str(bold_text);
+                        result.push_str("\x1b[0m");
+                    }
+                    chars.next(); // first *
+                    chars.next(); // second *
+                    found_close = true;
+                    break;
+                }
+                chars.next();
+            }
+            if !found_close {
+                result.push_str("**");
+                result.push_str(&input[start..]);
+                break;
+            }
+        // `inline code`
+        } else if ch == '`' {
             chars.next();
             let start = i + 1;
             let mut found_close = false;
