@@ -303,23 +303,17 @@ async fn cmd_mcp_tools(name: &str) -> Result<()> {
 
 async fn cmd_msg(session_id: &str, text: &str, from: Option<&str>) -> Result<()> {
     let sock = sock_path();
-    let stream = tokio::net::UnixStream::connect(&sock).await?;
-    let (read_half, write_half) = stream.into_split();
-    let mut lines = tokio::io::BufReader::new(read_half).lines();
-    let mut writer = tokio::io::BufWriter::new(write_half);
+    let (mut lines, mut writer) = connect_headless(&sock).await?;
 
-    // Consume Welcome message before sending
-    let _ = lines.next_line().await?;
-
-    let msg = ClientMessage::SendToSession {
-        target: session_id.to_string(),
-        text: text.to_string(),
-        from: from.map(str::to_string),
-    };
-    let mut json = serde_json::to_string(&msg)?;
-    json.push('\n');
-    writer.write_all(json.as_bytes()).await?;
-    writer.flush().await?;
+    send_client_msg(
+        &mut writer,
+        &ClientMessage::SendToSession {
+            target: session_id.to_string(),
+            text: text.to_string(),
+            from: from.map(str::to_string),
+        },
+    )
+    .await?;
 
     // Wait for possible error response
     if let Ok(Ok(Some(line))) = timeout(Duration::from_secs(2), lines.next_line()).await {
@@ -339,20 +333,17 @@ async fn cmd_mcp_call(server: &str, tool: &str, arguments: &str) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Invalid JSON arguments: {e}"))?;
 
     let sock = sock_path();
-    let stream = tokio::net::UnixStream::connect(&sock).await?;
-    let (read_half, write_half) = stream.into_split();
-    let mut writer = tokio::io::BufWriter::new(write_half);
-    let mut lines = tokio::io::BufReader::new(read_half).lines();
+    let (mut lines, mut writer) = connect_headless(&sock).await?;
 
-    let msg = ClientMessage::McpCall {
-        server: server.to_string(),
-        tool: tool.to_string(),
-        arguments: args,
-    };
-    let mut json = serde_json::to_string(&msg)?;
-    json.push('\n');
-    writer.write_all(json.as_bytes()).await?;
-    writer.flush().await?;
+    send_client_msg(
+        &mut writer,
+        &ClientMessage::McpCall {
+            server: server.to_string(),
+            tool: tool.to_string(),
+            arguments: args,
+        },
+    )
+    .await?;
 
     // Read lines until we get McpResult
     while let Some(line) = lines.next_line().await? {
@@ -370,18 +361,49 @@ async fn cmd_mcp_call(server: &str, tool: &str, arguments: &str) -> Result<()> {
     anyhow::bail!("Connection closed without receiving MCP result")
 }
 
-async fn cmd_sessions_list() -> Result<()> {
-    let sock = sock_path();
-    let stream = tokio::net::UnixStream::connect(&sock).await?;
-    let (read_half, write_half) = stream.into_split();
-    let mut writer = tokio::io::BufWriter::new(write_half);
-    let mut lines = tokio::io::BufReader::new(read_half).lines();
-
-    let msg = ClientMessage::ListSessions;
-    let mut json = serde_json::to_string(&msg)?;
+/// Write a single ClientMessage as a JSON line to the writer.
+async fn send_client_msg(
+    writer: &mut tokio::io::BufWriter<tokio::net::unix::OwnedWriteHalf>,
+    msg: &ClientMessage,
+) -> Result<()> {
+    let mut json = serde_json::to_string(msg)?;
     json.push('\n');
     writer.write_all(json.as_bytes()).await?;
     writer.flush().await?;
+    Ok(())
+}
+
+/// Connect to the daemon socket, read Welcome, then send Init{headless:true}.
+/// Returns (lines_reader, writer) ready for subsequent messages.
+async fn connect_headless(
+    sock: &std::path::Path,
+) -> Result<(
+    tokio::io::Lines<tokio::io::BufReader<tokio::net::unix::OwnedReadHalf>>,
+    tokio::io::BufWriter<tokio::net::unix::OwnedWriteHalf>,
+)> {
+    let stream = tokio::net::UnixStream::connect(sock).await?;
+    let (read_half, write_half) = stream.into_split();
+    let mut lines = tokio::io::BufReader::new(read_half).lines();
+    let mut writer = tokio::io::BufWriter::new(write_half);
+
+    // Read Welcome (required before sending anything meaningful)
+    let _ = lines.next_line().await?;
+
+    // Mark this as a headless transient connection so it is excluded from ListSessions
+    let cwd = std::env::current_dir()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    send_client_msg(&mut writer, &ClientMessage::Init { cwd, headless: true }).await?;
+
+    Ok((lines, writer))
+}
+
+async fn cmd_sessions_list() -> Result<()> {
+    let sock = sock_path();
+    let (mut lines, mut writer) = connect_headless(&sock).await?;
+
+    send_client_msg(&mut writer, &ClientMessage::ListSessions).await?;
 
     while let Some(line) = lines.next_line().await? {
         if let Ok(daemon_msg) = serde_json::from_str::<DaemonMessage>(&line) {
@@ -408,28 +430,18 @@ async fn cmd_sessions_list() -> Result<()> {
 
 async fn cmd_agent(prompt: &str, system_extra: Option<&str>) -> Result<()> {
     let sock = sock_path();
-    let stream = connect_to_daemon(&sock).await?;
-
-    let (read_half, write_half) = stream.into_split();
-    let mut writer = tokio::io::BufWriter::new(write_half);
-    let mut lines = tokio::io::BufReader::new(read_half).lines();
-
-    // Wait for Welcome
-    while let Some(line) = lines.next_line().await? {
-        if let Ok(DaemonMessage::Welcome { .. }) = serde_json::from_str(&line) {
-            break;
-        }
-    }
+    connect_to_daemon(&sock).await?; // ensure daemon is running
+    let (mut lines, mut writer) = connect_headless(&sock).await?;
 
     // Send the prompt
-    let msg = ClientMessage::SendMessage {
-        text: prompt.to_string(),
-        system_extra: system_extra.map(|s| s.to_string()),
-    };
-    let mut json = serde_json::to_string(&msg)?;
-    json.push('\n');
-    writer.write_all(json.as_bytes()).await?;
-    writer.flush().await?;
+    send_client_msg(
+        &mut writer,
+        &ClientMessage::SendMessage {
+            text: prompt.to_string(),
+            system_extra: system_extra.map(|s| s.to_string()),
+        },
+    )
+    .await?;
 
     // Collect only the last round of text (after all tool calls finish)
     let mut output = Vec::new();

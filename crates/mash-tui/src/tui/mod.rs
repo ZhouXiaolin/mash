@@ -107,6 +107,7 @@ pub async fn run(stream: UnixStream) -> Result<()> {
                 .unwrap_or_default()
                 .to_string_lossy()
                 .into_owned(),
+            headless: false,
         };
         let mut json = serde_json::to_string(&init).unwrap();
         json.push('\n');

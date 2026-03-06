@@ -159,6 +159,19 @@ pub fn InputSection(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         let socket_writer = socket_writer.clone();
         let all_commands = all_commands.clone();
         move |event| {
+            if let TerminalEvent::Resize(_, _) = event {
+                // On terminal resize, iocraft's inline clear uses MoveToPreviousLine which
+                // relies on accurate cursor tracking. When terminal width changes, the
+                // scrollback content reflows and the cursor drifts to a different physical
+                // row. We preemptively clear the screen so iocraft re-renders from a clean
+                // state (MoveToPreviousLine from row 0 is a no-op, then FromCursorDown
+                // becomes a full-screen clear).
+                let _ = crossterm::execute!(
+                    std::io::stdout(),
+                    crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
+                    crossterm::cursor::MoveTo(0, 0)
+                );
+            }
             if let TerminalEvent::Key(key) = event {
                 if key.kind != KeyEventKind::Press {
                     return;

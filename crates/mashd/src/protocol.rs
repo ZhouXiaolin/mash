@@ -26,7 +26,13 @@ pub struct McpServerInfo {
 #[serde(tag = "type")]
 pub enum ClientMessage {
     /// Sent by client right after receiving Welcome. Sets session working directory.
-    Init { cwd: String },
+    Init {
+        cwd: String,
+        /// If true, this session is a headless CLI command and should be excluded from
+        /// ListSessions results.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        headless: bool,
+    },
     /// Send a user message, starting the agent loop if idle.
     SendMessage {
         text: String,

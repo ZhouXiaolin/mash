@@ -36,6 +36,8 @@ struct Session {
     task_file: PathBuf,
     event_tx: broadcast::Sender<DaemonMessage>,
     busy: AtomicBool,
+    /// Headless sessions are transient CLI connections excluded from ListSessions.
+    headless: AtomicBool,
     system_extra: Mutex<Option<String>>,
 }
 
@@ -50,6 +52,7 @@ impl Session {
             task_file,
             event_tx,
             busy: AtomicBool::new(false),
+            headless: AtomicBool::new(false),
             system_extra: Mutex::new(None),
         }
     }
@@ -291,8 +294,11 @@ async fn handle_message(
     writer: &Arc<Mutex<tokio::net::unix::OwnedWriteHalf>>,
 ) {
     match msg {
-        ClientMessage::Init { cwd } => {
+        ClientMessage::Init { cwd, headless } => {
             *session.cwd.lock().await = PathBuf::from(cwd);
+            if headless {
+                session.headless.store(true, Ordering::Relaxed);
+            }
         }
         ClientMessage::SendMessage { text, system_extra } => {
             // Store system_extra on first message if provided
@@ -314,6 +320,7 @@ async fn handle_message(
             let sessions = shared.sessions.lock().await;
             let list: Vec<SessionInfo> = sessions
                 .values()
+                .filter(|s| !s.headless.load(Ordering::Relaxed))
                 .map(|s| SessionInfo {
                     id: s.id.clone(),
                     busy: s.busy.load(Ordering::Relaxed),
