@@ -420,10 +420,12 @@ fn spawn_agent_loop(input: String, shared: &Arc<SharedState>, session: &Arc<Sess
     tokio::spawn(async move {
         let cwd = session.cwd.lock().await.clone();
 
-        // Build config with session id, cwd and optional system_extra
+        // Build config with session id, cwd, task file and optional system_extra
         let mut system = format!(
-            "{}\n\n你的 session ID 是 `{}`。当使用 `mash msg` 回复其他 session 时，始终加上 `--from {}`。\n当前工作目录：{}",
-            base_config.system, session.id, session.id, cwd.display()
+            "{}\n\n{}\n\n你的 session ID 是 `{}`。当使用 `mash msg` 回复其他 session 时，始终加上 `--from {}`。\n当前工作目录：{}",
+            base_config.system,
+            mashd::tasks::format_task_prompt(&session.task_file),
+            session.id, session.id, cwd.display()
         );
         if let Some(extra) = session.system_extra.lock().await.as_deref() {
             system.push_str("\n\n");
