@@ -6,11 +6,30 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use iocraft::prelude::*;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::{Mutex, broadcast};
 
 use mashd::protocol::{DaemonMessage, McpServerInfo, SessionInfo, SkillEntry};
+
+/// Returned when daemon protocol version doesn't match client.
+#[derive(Debug)]
+pub struct VersionMismatch {
+    pub daemon: u32,
+    pub client: u32,
+}
+
+impl std::fmt::Display for VersionMismatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "protocol mismatch: daemon={}, client={}",
+            self.daemon, self.client
+        )
+    }
+}
+
+impl std::error::Error for VersionMismatch {}
 
 /// Messages broadcast between TUI components (internal to client).
 #[derive(Debug, Clone)]
@@ -54,10 +73,19 @@ pub async fn run(stream: UnixStream) -> Result<()> {
 
     let (session_id, skills, initial_busy) = match welcome {
         DaemonMessage::Welcome {
+            version,
             session_id,
             skills,
             busy,
-        } => (session_id, skills, busy),
+        } => {
+            if version != mashd::PROTOCOL_VERSION {
+                return Err(anyhow::Error::new(VersionMismatch {
+                    daemon: version,
+                    client: mashd::PROTOCOL_VERSION,
+                }));
+            }
+            (session_id, skills, busy)
+        }
         _ => (String::new(), Vec::new(), false),
     };
 
@@ -70,6 +98,21 @@ pub async fn run(stream: UnixStream) -> Result<()> {
 
     if initial_busy {
         let _ = ui_sender.send(AppMessage::AgentTaskStarted);
+    }
+
+    // Send Init with client's working directory
+    {
+        let init = mashd::protocol::ClientMessage::Init {
+            cwd: std::env::current_dir()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+        };
+        let mut json = serde_json::to_string(&init).unwrap();
+        json.push('\n');
+        let mut w = writer.lock().await;
+        let _ = w.write_all(json.as_bytes()).await;
+        let _ = w.flush().await;
     }
 
     let ctx = AppContext {

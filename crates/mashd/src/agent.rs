@@ -1,5 +1,4 @@
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::PathBuf;use std::sync::Arc;
 
 use anyhow::Result;
 use mash_agent::{run, AgentContext, AgentEvent as CoreAgentEvent};
@@ -108,6 +107,7 @@ pub async fn run_agent_loop(
     config: AgentConfig,
     messages: &Arc<Mutex<Vec<Message>>>,
     tx: mpsc::UnboundedSender<AgentEvent>,
+    cwd: PathBuf,
 ) -> Result<()> {
     // Create backend from ApiConfig
     let api_config = ApiConfig::load();
@@ -121,7 +121,7 @@ pub async fn run_agent_loop(
 
     // Build initial context
     let messages_snapshot = messages.lock().await.clone();
-    let tools = tool_adapter::create_tools();
+    let tools = tool_adapter::create_tools(cwd);
 
     let context = AgentContext {
         system: config.system,

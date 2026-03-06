@@ -30,6 +30,7 @@ struct SharedState {
 
 struct Session {
     id: String,
+    cwd: Mutex<PathBuf>,
     messages: Arc<Mutex<Vec<Message>>>,
     pending_user_messages: Arc<Mutex<Vec<String>>>,
     task_file: PathBuf,
@@ -43,6 +44,7 @@ impl Session {
         let (event_tx, _) = broadcast::channel::<DaemonMessage>(256);
         Self {
             id,
+            cwd: Mutex::new(std::env::current_dir().unwrap_or_default()),
             messages: Arc::new(Mutex::new(Vec::new())),
             pending_user_messages: Arc::new(Mutex::new(Vec::new())),
             task_file,
@@ -233,6 +235,7 @@ async fn handle_client(stream: tokio::net::UnixStream, shared: Arc<SharedState>)
 
     // Send Welcome
     let welcome = DaemonMessage::Welcome {
+        version: mashd::PROTOCOL_VERSION,
         session_id: session_id.clone(),
         skills: shared.skills.clone(),
         busy: false,
@@ -288,6 +291,9 @@ async fn handle_message(
     writer: &Arc<Mutex<tokio::net::unix::OwnedWriteHalf>>,
 ) {
     match msg {
+        ClientMessage::Init { cwd } => {
+            *session.cwd.lock().await = PathBuf::from(cwd);
+        }
         ClientMessage::SendMessage { text, system_extra } => {
             // Store system_extra on first message if provided
             if let Some(extra) = system_extra {
@@ -405,10 +411,12 @@ fn spawn_agent_loop(input: String, shared: &Arc<SharedState>, session: &Arc<Sess
     let session = Arc::clone(session);
 
     tokio::spawn(async move {
-        // Build config with session id and optional system_extra
+        let cwd = session.cwd.lock().await.clone();
+
+        // Build config with session id, cwd and optional system_extra
         let mut system = format!(
-            "{}\n\n你的 session ID 是 `{}`。当使用 `mash msg` 回复其他 session 时，始终加上 `--from {}`。",
-            base_config.system, session.id, session.id
+            "{}\n\n你的 session ID 是 `{}`。当使用 `mash msg` 回复其他 session 时，始终加上 `--from {}`。\n当前工作目录：{}",
+            base_config.system, session.id, session.id, cwd.display()
         );
         if let Some(extra) = session.system_extra.lock().await.as_deref() {
             system.push_str("\n\n");
@@ -451,6 +459,7 @@ fn spawn_agent_loop(input: String, shared: &Arc<SharedState>, session: &Arc<Sess
                 config.clone(),
                 &session.messages,
                 tx,
+                cwd.clone(),
             )
             .await;
 

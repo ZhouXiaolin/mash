@@ -25,6 +25,8 @@ pub struct McpServerInfo {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ClientMessage {
+    /// Sent by client right after receiving Welcome. Sets session working directory.
+    Init { cwd: String },
     /// Send a user message, starting the agent loop if idle.
     SendMessage {
         text: String,
@@ -61,6 +63,8 @@ pub enum ClientMessage {
 pub enum DaemonMessage {
     /// Sent immediately after client connects.
     Welcome {
+        #[serde(default)]
+        version: u32,
         #[serde(default)]
         session_id: String,
         skills: Vec<SkillEntry>,

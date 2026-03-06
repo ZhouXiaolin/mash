@@ -1,4 +1,6 @@
 // crates/mash-core/src/tool_adapter.rs
+use std::path::PathBuf;
+
 use serde_json::json;
 use serde_json::Value;
 use std::pin::Pin;
@@ -7,7 +9,9 @@ use std::process::Command;
 use mash_agent::{AgentTool, ToolResult};
 
 /// Wrapper for bash tool implementing AgentTool trait.
-pub struct BashTool;
+pub struct BashTool {
+    cwd: PathBuf,
+}
 
 impl AgentTool for BashTool {
     fn name(&self) -> &str {
@@ -40,8 +44,9 @@ impl AgentTool for BashTool {
         input: &Value,
     ) -> Pin<Box<dyn std::future::Future<Output = ToolResult> + Send + '_>> {
         let input = input.clone();
+        let cwd = self.cwd.clone();
         Box::pin(async move {
-            match exec_bash(&input) {
+            match exec_bash(&input, &cwd) {
                 Ok(output) => ToolResult {
                     content: output,
                     is_error: false,
@@ -55,9 +60,13 @@ impl AgentTool for BashTool {
     }
 }
 
-fn exec_bash(input: &Value) -> anyhow::Result<String> {
+fn exec_bash(input: &Value, cwd: &PathBuf) -> anyhow::Result<String> {
     let command = input["command"].as_str().unwrap_or_default();
-    let output = Command::new("bash").arg("-c").arg(command).output()?;
+    let output = Command::new("bash")
+        .arg("-c")
+        .arg(command)
+        .current_dir(cwd)
+        .output()?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -83,6 +92,6 @@ fn exec_bash(input: &Value) -> anyhow::Result<String> {
 }
 
 /// Create all tool instances.
-pub fn create_tools() -> Vec<Box<dyn AgentTool>> {
-    vec![Box::new(BashTool)]
+pub fn create_tools(cwd: PathBuf) -> Vec<Box<dyn AgentTool>> {
+    vec![Box::new(BashTool { cwd })]
 }

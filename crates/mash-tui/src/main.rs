@@ -83,6 +83,24 @@ fn sock_path() -> PathBuf {
         .join("mash.sock")
 }
 
+fn pid_path() -> PathBuf {
+    dirs::home_dir()
+        .expect("could not determine home directory")
+        .join(".mash")
+        .join("mashd.pid")
+}
+
+fn kill_daemon() {
+    if let Ok(pid_str) = std::fs::read_to_string(pid_path()) {
+        if let Ok(pid) = pid_str.trim().parse::<u32>() {
+            let _ = std::process::Command::new("kill").arg(pid.to_string()).output();
+        }
+    }
+    // Clean up socket so auto_start_daemon can bind
+    let _ = std::fs::remove_file(sock_path());
+    let _ = std::fs::remove_file(pid_path());
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -108,27 +126,39 @@ async fn main() -> Result<()> {
 
 async fn run_client() -> Result<()> {
     let sock = sock_path();
+    let stream = connect_to_daemon(&sock).await?;
 
-    let stream = match tokio::net::UnixStream::connect(&sock).await {
-        Ok(s) => s,
-        Err(_) => {
-            eprintln!("Starting mashd...");
+    match mash_tui::tui::run(stream).await {
+        Err(e) if e.downcast_ref::<mash_tui::tui::VersionMismatch>().is_some() => {
+            eprintln!("{e}. Restarting mashd...");
+            kill_daemon();
+            tokio::time::sleep(Duration::from_millis(500)).await;
             auto_start_daemon()?;
-
-            let mut connected = None;
-            for _ in 0..300 {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                if let Ok(s) = tokio::net::UnixStream::connect(&sock).await {
-                    connected = Some(s);
-                    break;
-                }
-            }
-
-            connected.ok_or_else(|| anyhow::anyhow!("Failed to connect to mashd"))?
+            let stream = wait_for_daemon(&sock).await?;
+            mash_tui::tui::run(stream).await
         }
-    };
+        other => other,
+    }
+}
 
-    mash_tui::tui::run(stream).await
+async fn connect_to_daemon(sock: &std::path::Path) -> Result<tokio::net::UnixStream> {
+    if let Ok(s) = tokio::net::UnixStream::connect(sock).await {
+        return Ok(s);
+    }
+
+    eprintln!("Starting mashd...");
+    auto_start_daemon()?;
+    wait_for_daemon(sock).await
+}
+
+async fn wait_for_daemon(sock: &std::path::Path) -> Result<tokio::net::UnixStream> {
+    for _ in 0..300 {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        if let Ok(s) = tokio::net::UnixStream::connect(sock).await {
+            return Ok(s);
+        }
+    }
+    anyhow::bail!("Failed to connect to mashd")
 }
 
 fn auto_start_daemon() -> Result<()> {
@@ -378,25 +408,7 @@ async fn cmd_sessions_list() -> Result<()> {
 
 async fn cmd_agent(prompt: &str, system_extra: Option<&str>) -> Result<()> {
     let sock = sock_path();
-
-    let stream = match tokio::net::UnixStream::connect(&sock).await {
-        Ok(s) => s,
-        Err(_) => {
-            eprintln!("Starting mashd...");
-            auto_start_daemon()?;
-
-            let mut connected = None;
-            for _ in 0..300 {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                if let Ok(s) = tokio::net::UnixStream::connect(&sock).await {
-                    connected = Some(s);
-                    break;
-                }
-            }
-
-            connected.ok_or_else(|| anyhow::anyhow!("Failed to connect to mashd"))?
-        }
-    };
+    let stream = connect_to_daemon(&sock).await?;
 
     let (read_half, write_half) = stream.into_split();
     let mut writer = tokio::io::BufWriter::new(write_half);
