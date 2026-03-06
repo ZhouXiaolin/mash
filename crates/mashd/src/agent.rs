@@ -108,7 +108,6 @@ pub async fn run_agent_loop(
     config: AgentConfig,
     messages: &Arc<Mutex<Vec<Message>>>,
     tx: mpsc::UnboundedSender<AgentEvent>,
-    pending_user_messages: &Arc<Mutex<Vec<String>>>,
 ) -> Result<()> {
     // Create backend from ApiConfig
     let api_config = ApiConfig::load();
@@ -137,26 +136,10 @@ pub async fn run_agent_loop(
 
     // Process events
     tokio::pin!(event_stream);
-    let mut current_messages = messages.lock().await.clone();
+    let current_messages = messages.lock().await.clone();
 
     while let Some(event) = event_stream.next().await {
         adapt_event(&event, &tx);
-
-        // Handle pending user messages between turns
-        if matches!(
-            event,
-            CoreAgentEvent::TurnEnd | CoreAgentEvent::AgentEnd
-        ) {
-            let pending = pending_user_messages.lock().await.drain(..).collect::<Vec<_>>();
-            if !pending.is_empty() {
-                let text = pending.join("\n\n");
-                current_messages.push(mash_ai::Message {
-                    role: mash_ai::Role::User,
-                    content: mash_ai::MessageContent::Text(text),
-                });
-                *messages.lock().await = current_messages.clone();
-            }
-        }
 
         if matches!(event, CoreAgentEvent::AgentEnd | CoreAgentEvent::Error(_)) {
             *messages.lock().await = current_messages;

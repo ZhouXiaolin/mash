@@ -326,24 +326,31 @@ async fn handle_message(
                 .collect();
             let _ = send_msg(writer, &DaemonMessage::McpList { servers }).await;
         }
-        ClientMessage::SendToSession { target, text } => {
-            let sessions = shared.sessions.lock().await;
-            if let Some(target_session) = sessions.get(&target) {
+        ClientMessage::SendToSession { target, text, from } => {
+            let sender_id = from.unwrap_or_else(|| session.id.clone());
+            let target_session = shared.sessions.lock().await.get(&target).cloned();
+            if let Some(target_session) = target_session {
                 // Notify target TUI
                 let _ = target_session.event_tx.send(DaemonMessage::PeerMessage {
-                    from: session.id.clone(),
+                    from: sender_id.clone(),
                     text: text.clone(),
                 });
                 // Inject into target session's context so its agent sees it
                 let context_msg = format!(
-                    "[来自 session {} 的消息]\n{}\n\n（使用 bash 执行 `mash msg {} \"你的回复\"` 回复该 session）",
-                    session.id, text, session.id
+                    "[来自 session {} 的消息]\n{}\n\n（使用 bash 执行 `mash msg {} --from {} \"你的回复\"` 回复该 session）",
+                    sender_id, text, sender_id, target
                 );
-                target_session
-                    .pending_user_messages
-                    .lock()
-                    .await
-                    .push(context_msg);
+                if target_session.busy.load(Ordering::Relaxed) {
+                    target_session
+                        .pending_user_messages
+                        .lock()
+                        .await
+                        .push(context_msg);
+                } else {
+                    target_session.busy.store(true, Ordering::Relaxed);
+                    let _ = target_session.event_tx.send(DaemonMessage::AgentStarted);
+                    spawn_agent_loop(context_msg, shared, &target_session);
+                }
             } else {
                 let _ = send_msg(
                     writer,
@@ -398,60 +405,87 @@ fn spawn_agent_loop(input: String, shared: &Arc<SharedState>, session: &Arc<Sess
     let session = Arc::clone(session);
 
     tokio::spawn(async move {
-        // Build config with optional system_extra for this session
-        let config = match session.system_extra.lock().await.as_deref() {
-            Some(extra) => AgentConfig {
-                system: format!("{}\n\n{}", base_config.system, extra),
-                ..base_config.clone()
-            },
-            None => base_config.clone(),
+        // Build config with session id and optional system_extra
+        let mut system = format!(
+            "{}\n\n你的 session ID 是 `{}`。当使用 `mash msg` 回复其他 session 时，始终加上 `--from {}`。",
+            base_config.system, session.id, session.id
+        );
+        if let Some(extra) = session.system_extra.lock().await.as_deref() {
+            system.push_str("\n\n");
+            system.push_str(extra);
+        }
+        let config = AgentConfig {
+            system,
+            ..base_config.clone()
         };
 
-        // Push user message into history
+        // Push initial user message into history
         session.messages.lock().await.push(Message {
             role: Role::User,
             content: MessageContent::Text(input),
         });
 
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<AgentEvent>();
+        // Loop: run agent, then check for pending messages to drive next iteration
+        loop {
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<AgentEvent>();
 
-        // Forward agent events → session broadcast
-        let event_tx = session.event_tx.clone();
-        let forwarder = tokio::spawn(async move {
-            while let Some(event) = rx.recv().await {
-                let msg = match event {
-                    AgentEvent::Text(line) => DaemonMessage::Text { line },
-                    AgentEvent::ToolCall { name, description } => {
-                        DaemonMessage::ToolCall { name, description }
-                    }
-                    AgentEvent::ToolResult { preview } => DaemonMessage::ToolResult { preview },
-                    AgentEvent::TasksUpdated { done, total } => {
-                        DaemonMessage::TasksUpdated { done, total }
-                    }
-                };
-                let _ = event_tx.send(msg);
+            // Forward agent events → session broadcast
+            let event_tx = session.event_tx.clone();
+            let forwarder = tokio::spawn(async move {
+                while let Some(event) = rx.recv().await {
+                    let msg = match event {
+                        AgentEvent::Text(line) => DaemonMessage::Text { line },
+                        AgentEvent::ToolCall { name, description } => {
+                            DaemonMessage::ToolCall { name, description }
+                        }
+                        AgentEvent::ToolResult { preview } => DaemonMessage::ToolResult { preview },
+                        AgentEvent::TasksUpdated { done, total } => {
+                            DaemonMessage::TasksUpdated { done, total }
+                        }
+                    };
+                    let _ = event_tx.send(msg);
+                }
+            });
+
+            let result = agent::run_agent_loop(
+                config.clone(),
+                &session.messages,
+                tx,
+            )
+            .await;
+
+            let _ = forwarder.await;
+
+            match result {
+                Ok(()) => {
+                    let _ = session.event_tx.send(DaemonMessage::AgentCompleted);
+                }
+                Err(e) => {
+                    let _ = session.event_tx.send(DaemonMessage::AgentError {
+                        message: e.to_string(),
+                    });
+                    break;
+                }
             }
-        });
 
-        let result = agent::run_agent_loop(
-            config,
-            &session.messages,
-            tx,
-            &session.pending_user_messages,
-        )
-        .await;
-
-        let _ = forwarder.await;
-
-        match result {
-            Ok(()) => {
-                let _ = session.event_tx.send(DaemonMessage::AgentCompleted);
+            // Check for pending messages to drive next loop
+            let pending = session
+                .pending_user_messages
+                .lock()
+                .await
+                .drain(..)
+                .collect::<Vec<_>>();
+            if pending.is_empty() {
+                break;
             }
-            Err(e) => {
-                let _ = session.event_tx.send(DaemonMessage::AgentError {
-                    message: e.to_string(),
-                });
-            }
+
+            // Push pending as next user input and continue
+            let text = pending.join("\n\n");
+            session.messages.lock().await.push(Message {
+                role: Role::User,
+                content: MessageContent::Text(text),
+            });
+            let _ = session.event_tx.send(DaemonMessage::AgentStarted);
         }
 
         session.busy.store(false, Ordering::Relaxed);

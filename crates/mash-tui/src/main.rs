@@ -35,6 +35,9 @@ enum Commands {
         session_id: String,
         /// Message text
         text: Vec<String>,
+        /// Sender session ID (used when relaying from another session)
+        #[arg(long)]
+        from: Option<String>,
     },
     /// Run agent headlessly and print the result
     Agent {
@@ -98,7 +101,7 @@ async fn main() -> Result<()> {
         Some(Commands::Sessions { action }) => match action {
             SessionAction::List => cmd_sessions_list().await,
         },
-        Some(Commands::Msg { session_id, text }) => cmd_msg(&session_id, &text.join(" ")).await,
+        Some(Commands::Msg { session_id, text, from }) => cmd_msg(&session_id, &text.join(" "), from.as_deref()).await,
         Some(Commands::Agent { prompt, system }) => cmd_agent(&prompt, system.as_deref()).await,
     }
 }
@@ -268,20 +271,34 @@ async fn cmd_mcp_tools(name: &str) -> Result<()> {
     Ok(())
 }
 
-async fn cmd_msg(session_id: &str, text: &str) -> Result<()> {
+async fn cmd_msg(session_id: &str, text: &str, from: Option<&str>) -> Result<()> {
     let sock = sock_path();
     let stream = tokio::net::UnixStream::connect(&sock).await?;
-    let (_, write_half) = stream.into_split();
+    let (read_half, write_half) = stream.into_split();
+    let mut lines = tokio::io::BufReader::new(read_half).lines();
     let mut writer = tokio::io::BufWriter::new(write_half);
+
+    // Consume Welcome message before sending
+    let _ = lines.next_line().await?;
 
     let msg = ClientMessage::SendToSession {
         target: session_id.to_string(),
         text: text.to_string(),
+        from: from.map(str::to_string),
     };
     let mut json = serde_json::to_string(&msg)?;
     json.push('\n');
     writer.write_all(json.as_bytes()).await?;
     writer.flush().await?;
+
+    // Wait for possible error response
+    if let Ok(Ok(Some(line))) = timeout(Duration::from_secs(2), lines.next_line()).await {
+        if let Ok(daemon_msg) = serde_json::from_str::<DaemonMessage>(&line) {
+            if let DaemonMessage::AgentError { message } = daemon_msg {
+                anyhow::bail!(message);
+            }
+        }
+    }
 
     println!("Message sent to session {session_id}.");
     Ok(())

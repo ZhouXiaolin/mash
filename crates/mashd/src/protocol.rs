@@ -39,7 +39,13 @@ pub enum ClientMessage {
     /// List all MCP servers and their tools.
     ListMcp,
     /// Send a text message to another session.
-    SendToSession { target: String, text: String },
+    SendToSession {
+        target: String,
+        text: String,
+        /// Original sender session ID (for CLI relay).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from: Option<String>,
+    },
     /// Call an MCP tool via the daemon.
     McpCall {
         server: String,

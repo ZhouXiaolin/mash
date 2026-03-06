@@ -111,6 +111,7 @@ fn try_builtin(
                     ClientMessage::SendToSession {
                         target,
                         text: msg_text,
+                        from: None,
                     },
                 );
                 return true;
