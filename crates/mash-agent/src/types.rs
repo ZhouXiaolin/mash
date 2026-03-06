@@ -1,6 +1,9 @@
 // crates/mash-agent/src/types.rs
+use std::sync::Arc;
+
 use mash_ai::Message;
 use serde_json::Value;
+use tokio::sync::Mutex;
 
 /// Events emitted by the agent loop.
 #[derive(Debug, Clone)]
@@ -58,6 +61,6 @@ pub struct AgentContext {
     pub system: String,
     pub model: String,
     pub max_tokens: u32,
-    pub messages: Vec<Message>,
+    pub messages: Arc<Mutex<Vec<Message>>>,
     pub tools: Vec<Box<dyn AgentTool>>,
 }

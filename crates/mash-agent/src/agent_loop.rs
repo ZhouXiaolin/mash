@@ -19,7 +19,7 @@ pub fn run(
     let stream = async_stream::stream! {
         yield AgentEvent::AgentStart;
 
-        let mut messages = context.messages;
+        let messages = context.messages;
         let tool_defs: Vec<serde_json::Value> = context
             .tools
             .iter()
@@ -38,7 +38,7 @@ pub fn run(
                 model: context.model.clone(),
                 system: context.system.clone(),
                 max_tokens: context.max_tokens,
-                messages: messages.clone(),
+                messages: messages.lock().await.clone(),
                 tools: tool_defs.clone(),
             };
 
@@ -76,7 +76,7 @@ pub fn run(
             }
 
             // Push assistant message
-            messages.push(Message {
+            messages.lock().await.push(Message {
                 role: mash_ai::Role::Assistant,
                 content: MessageContent::Blocks(response.content),
             });
@@ -125,7 +125,7 @@ pub fn run(
             }
 
             // Push tool results as user message
-            messages.push(Message {
+            messages.lock().await.push(Message {
                 role: mash_ai::Role::User,
                 content: MessageContent::Blocks(results),
             });
@@ -148,7 +148,7 @@ pub fn run_streaming(
     let stream = async_stream::stream! {
         yield AgentEvent::AgentStart;
 
-        let mut messages = context.messages;
+        let messages = context.messages;
         let tool_defs: Vec<serde_json::Value> = context
             .tools
             .iter()
@@ -167,7 +167,7 @@ pub fn run_streaming(
                 model: context.model.clone(),
                 system: context.system.clone(),
                 max_tokens: context.max_tokens,
-                messages: messages.clone(),
+                messages: messages.lock().await.clone(),
                 tools: tool_defs.clone(),
             };
 
@@ -227,7 +227,7 @@ pub fn run_streaming(
             if blocks.is_empty() && !full_text.is_empty() {
                 blocks.push(ContentBlock::Text { text: full_text });
             }
-            messages.push(Message {
+            messages.lock().await.push(Message {
                 role: mash_ai::Role::Assistant,
                 content: MessageContent::Blocks(blocks),
             });
@@ -274,7 +274,7 @@ pub fn run_streaming(
                 });
             }
 
-            messages.push(Message {
+            messages.lock().await.push(Message {
                 role: mash_ai::Role::User,
                 content: MessageContent::Blocks(results),
             });

@@ -119,15 +119,15 @@ pub async fn run_agent_loop(
     // Create abort channel
     let (_abort_tx, abort_rx) = tokio::sync::watch::channel(false);
 
-    // Build initial context
-    let messages_snapshot = messages.lock().await.clone();
+    // Build context, sharing the messages Arc directly so the agent loop
+    // writes assistant replies and tool results back in-place.
     let tools = tool_adapter::create_tools(cwd);
 
     let context = AgentContext {
         system: config.system,
         model: config.model,
         max_tokens: config.max_tokens,
-        messages: messages_snapshot,
+        messages: Arc::clone(messages),
         tools,
     };
 
@@ -136,13 +136,11 @@ pub async fn run_agent_loop(
 
     // Process events
     tokio::pin!(event_stream);
-    let current_messages = messages.lock().await.clone();
 
     while let Some(event) = event_stream.next().await {
         adapt_event(&event, &tx);
 
         if matches!(event, CoreAgentEvent::AgentEnd | CoreAgentEvent::Error(_)) {
-            *messages.lock().await = current_messages;
             break;
         }
     }

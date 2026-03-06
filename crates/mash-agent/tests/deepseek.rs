@@ -1,10 +1,13 @@
 // crates/mash-agent/tests/deepseek.rs
+use std::sync::Arc;
+
 use mash_ai::anthropic::{AnthropicBackend, AnthropicConfig};
 use mash_ai::openai::{OpenAiBackend, OpenAiConfig};
 use mash_ai::{Message, MessageContent, Role};
 use mash_agent::{run, run_streaming, AgentContext, AgentTool, ToolResult};
 use serde_json::json;
 use std::pin::Pin;
+use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
 
 fn api_key() -> String {
@@ -30,10 +33,10 @@ fn simple_context(model: &str) -> AgentContext {
         system: "You are a helpful assistant. Keep responses brief.".to_string(),
         model: model.to_string(),
         max_tokens: 256,
-        messages: vec![Message {
+        messages: Arc::new(Mutex::new(vec![Message {
             role: Role::User,
             content: MessageContent::Text("Say 'Hello, DeepSeek!' in one sentence.".to_string()),
-        }],
+        }])),
         tools: vec![],
     }
 }
@@ -116,10 +119,10 @@ async fn openai_tool_calling() {
         system: "You are a helpful assistant. Use the echo tool when asked to echo.".to_string(),
         model: "deepseek-chat".to_string(),
         max_tokens: 256,
-        messages: vec![Message {
+        messages: Arc::new(Mutex::new(vec![Message {
             role: Role::User,
             content: MessageContent::Text("Please echo the word 'test'".to_string()),
-        }],
+        }])),
         tools: vec![Box::new(EchoTool)],
     };
     let (_tx, rx) = tokio::sync::watch::channel(false);

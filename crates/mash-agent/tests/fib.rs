@@ -8,12 +8,15 @@
 //!
 //! Total: 8 combinations
 
+use std::sync::Arc;
+
 use mash_agent::{AgentContext, AgentTool, ToolResult, run, run_streaming};
 use mash_ai::anthropic::{AnthropicBackend, AnthropicConfig};
 use mash_ai::openai::{OpenAiBackend, OpenAiConfig};
 use mash_ai::{Message, MessageContent, Role};
 use serde_json::json;
 use std::pin::Pin;
+use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
 
 fn api_key() -> String {
@@ -174,10 +177,10 @@ async fn run_fibonacci_test(
         system,
         model: model.as_str().to_string(),
         max_tokens: 4096,
-        messages: vec![Message {
+        messages: Arc::new(Mutex::new(vec![Message {
             role: Role::User,
             content: MessageContent::Text(user_prompt),
-        }],
+        }])),
         tools: vec![Box::new(BashTool)],
     };
     let (_tx, rx) = tokio::sync::watch::channel(false);
@@ -436,10 +439,10 @@ async fn simple_bash_tool_test() {
         system: "You are a helpful assistant with access to a bash tool. When the user asks you to execute commands or check system information, use the bash tool.".to_string(),
         model: "deepseek-chat".to_string(),
         max_tokens: 1024,
-        messages: vec![Message {
+        messages: Arc::new(Mutex::new(vec![Message {
             role: Role::User,
             content: MessageContent::Text("Use bash to echo 'hello world'".to_string()),
-        }],
+        }])),
         tools: vec![Box::new(BashTool)],
     };
     let (_tx, rx) = tokio::sync::watch::channel(false);
