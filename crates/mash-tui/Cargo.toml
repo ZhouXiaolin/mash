@@ -10,9 +10,10 @@ path = "src/main.rs"
 [dependencies]
 mashd = { path = "../mashd" }
 anyhow.workspace = true
-clap.workspace = true
-crossterm.workspace = true
+clap = { version = "4", features = ["derive"] }
 dirs.workspace = true
-iocraft.workspace = true
+iocraft = "0.7"
 serde_json.workspace = true
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "parsing", "regex-fancy"] }
 tokio.workspace = true
+crossterm = "0.29.0"

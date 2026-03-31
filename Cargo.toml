@@ -10,11 +10,8 @@ version = "0.1.0"
 anyhow = "1"
 async-stream = "0.3"
 bytes = "1"
-clap = { version = "4", features = ["derive"] }
-crossterm = "0.29"
 dirs = "6.0.0"
 futures-core = "0.3"
-iocraft = "0.7"
 mash-agent = { path = "crates/mash-agent" }
 mash-ai = { path = "crates/mash-ai" }
 reqwest = { version = "0.13", features = ["json", "stream"] }
