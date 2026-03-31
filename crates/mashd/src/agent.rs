@@ -20,8 +20,6 @@ pub const SYSTEM_PROMPT: &str = concat!(
     "\n\n",
     include_str!("prompt/tools_specialized.md"),
     "\n\n",
-    include_str!("prompt/work_style.md"),
-    "\n\n",
     include_str!("prompt/response_format.md"),
 );
 

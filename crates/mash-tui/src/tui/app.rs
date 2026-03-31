@@ -129,6 +129,42 @@ fn highlight_inline_code(input: &str) -> String {
     result
 }
 
+fn strip_markdown_heading_prefix(input: &str) -> &str {
+    let s = input.trim_start();
+    let hash_count = s.chars().take_while(|c| *c == '#').count();
+    if (1..=6).contains(&hash_count) {
+        let rest = &s[hash_count..];
+        if rest.starts_with(' ') {
+            return rest.trim_start();
+        }
+    }
+    input
+}
+
+fn color_numbered_prefix_blue(input: &str) -> String {
+    let s = input;
+    let mut digit_end = 0usize;
+    for (i, ch) in s.char_indices() {
+        if ch.is_ascii_digit() {
+            digit_end = i + ch.len_utf8();
+            continue;
+        }
+        break;
+    }
+    if digit_end > 0 && s[digit_end..].starts_with('.') {
+        let marker = &s[..digit_end + 1];
+        let rest = &s[digit_end + 1..];
+        return format!("\x1b[94m{}\x1b[0m{}", marker, rest);
+    }
+    s.to_string()
+}
+
+fn format_assistant_line(line: &str) -> String {
+    let no_heading = strip_markdown_heading_prefix(line);
+    let numbered = color_numbered_prefix_blue(no_heading);
+    highlight_inline_code(&numbered)
+}
+
 #[component]
 pub fn App(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let (stdout, _stderr) = hooks.use_output();
@@ -165,7 +201,7 @@ pub fn App(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                     stdout_msgs.println(format!("\x1b[36m▶ {}\x1b[0m", text));
                 }
                 AppMessage::AssistantLine(line) => {
-                    stdout_msgs.println(highlight_inline_code(&line));
+                    stdout_msgs.println(format_assistant_line(&line));
                 }
                 AppMessage::ToolCall { name, description } => {
                     last_tool_name = Some(name.clone());
