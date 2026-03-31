@@ -33,7 +33,7 @@ struct Session {
     cwd: Mutex<PathBuf>,
     messages: Arc<Mutex<Vec<Message>>>,
     pending_user_messages: Arc<Mutex<Vec<String>>>,
-    task_file: PathBuf,
+    task_dir: Mutex<PathBuf>,
     event_tx: broadcast::Sender<DaemonMessage>,
     busy: AtomicBool,
     /// Headless sessions are transient CLI connections excluded from ListSessions.
@@ -42,14 +42,14 @@ struct Session {
 }
 
 impl Session {
-    fn new(id: String, task_file: PathBuf) -> Self {
+    fn new(id: String, task_dir: PathBuf) -> Self {
         let (event_tx, _) = broadcast::channel::<DaemonMessage>(256);
         Self {
             id,
             cwd: Mutex::new(std::env::current_dir().unwrap_or_default()),
             messages: Arc::new(Mutex::new(Vec::new())),
             pending_user_messages: Arc::new(Mutex::new(Vec::new())),
-            task_file,
+            task_dir: Mutex::new(task_dir),
             event_tx,
             busy: AtomicBool::new(false),
             headless: AtomicBool::new(false),
@@ -202,15 +202,17 @@ async fn handle_client(stream: tokio::net::UnixStream, shared: Arc<SharedState>)
 
     // Create a new session for this client
     let session_id = generate_session_id();
-    let task_file = match tasks::init_task_file() {
-        Ok(f) => f,
+    let initial_task_dir = match tasks::project_tasks_dir(
+        &std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+    ) {
+        Ok(d) => d,
         Err(e) => {
-            eprintln!("failed to init task file: {e}");
+            eprintln!("failed to init task directory: {e}");
             return;
         }
     };
 
-    let session = Arc::new(Session::new(session_id.clone(), task_file.clone()));
+    let session = Arc::new(Session::new(session_id.clone(), initial_task_dir));
     shared
         .sessions
         .lock()
@@ -221,14 +223,29 @@ async fn handle_client(stream: tokio::net::UnixStream, shared: Arc<SharedState>)
 
     // Start task-file polling for this session
     let poll_tx = session.event_tx.clone();
-    let poll_task_file = task_file.clone();
+    let poll_session = Arc::clone(&session);
     let poll_handle = tokio::spawn(async move {
+        let mut last_sent: Option<(PathBuf, (std::time::SystemTime, u64))> = None;
         loop {
             tokio::time::sleep(Duration::from_secs(2)).await;
-            if let Some(content) = tasks::read_task_content(&poll_task_file)
-                && content.contains("- [")
-            {
-                if let Some((done, total)) = tasks::read_task_summary(&poll_task_file) {
+
+            let task_dir = poll_session.task_dir.lock().await.clone();
+            if let Some((task_file, content)) = tasks::read_latest_task_content(&task_dir) {
+                let signature = tasks::task_file_signature(&task_file);
+                let changed = match (&last_sent, signature) {
+                    (Some((old_path, old_sig)), Some(new_sig)) => {
+                        old_path != &task_file || old_sig != &new_sig
+                    }
+                    _ => true,
+                };
+                if !changed {
+                    continue;
+                }
+                if let Some(new_sig) = tasks::task_file_signature(&task_file) {
+                    last_sent = Some((task_file, new_sig));
+                }
+
+                if let Some((done, total)) = tasks::read_task_summary_from_dir(&task_dir) {
                     let _ = poll_tx.send(DaemonMessage::TasksUpdated { done, total });
                 }
                 let _ = poll_tx.send(DaemonMessage::TaskContent { content });
@@ -295,7 +312,11 @@ async fn handle_message(
 ) {
     match msg {
         ClientMessage::Init { cwd, headless } => {
-            *session.cwd.lock().await = PathBuf::from(cwd);
+            let cwd_path = PathBuf::from(cwd);
+            *session.cwd.lock().await = cwd_path.clone();
+            if let Ok(task_dir) = tasks::project_tasks_dir(&cwd_path) {
+                *session.task_dir.lock().await = task_dir;
+            }
             if headless {
                 session.headless.store(true, Ordering::Relaxed);
             }
@@ -419,13 +440,16 @@ fn spawn_agent_loop(input: String, shared: &Arc<SharedState>, session: &Arc<Sess
 
     tokio::spawn(async move {
         let cwd = session.cwd.lock().await.clone();
+        let task_dir = session.task_dir.lock().await.clone();
 
         // Build config with session id, cwd, task file and optional system_extra
         let mut system = format!(
-            "{}\n\n{}\n\n你的 session ID 是 `{}`。当使用 `mash msg` 回复其他 session 时，始终加上 `--from {}`。\n当前工作目录：{}",
+            "{}\n\n{}\n\n你的 session ID 是 `{}`。当使用 `mash msg` 回复其他 session 时，始终加上 `--from {}`。需要一次性启动子代理时，使用 bash 执行 `mash agent \"<任务说明>\"`（可选 `--system`）。\n当前工作目录：{}",
             base_config.system,
-            mashd::tasks::format_task_prompt(&session.task_file),
-            session.id, session.id, cwd.display()
+            mashd::tasks::format_task_prompt(&task_dir),
+            session.id,
+            session.id,
+            cwd.display()
         );
         if let Some(extra) = session.system_extra.lock().await.as_deref() {
             system.push_str("\n\n");
@@ -464,13 +488,8 @@ fn spawn_agent_loop(input: String, shared: &Arc<SharedState>, session: &Arc<Sess
                 }
             });
 
-            let result = agent::run_agent_loop(
-                config.clone(),
-                &session.messages,
-                tx,
-                cwd.clone(),
-            )
-            .await;
+            let result =
+                agent::run_agent_loop(config.clone(), &session.messages, tx, cwd.clone()).await;
 
             let _ = forwarder.await;
 

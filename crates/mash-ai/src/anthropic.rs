@@ -2,7 +2,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use bytes::Bytes;
 use futures_core::Stream;
 use reqwest::Client;
@@ -95,7 +95,13 @@ impl LlmClient for AnthropicBackend {
     fn stream(
         &self,
         request: &LlmRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<Pin<Box<dyn Stream<Item = StreamEvent> + Send>>>> + Send + '_>> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<Pin<Box<dyn Stream<Item = StreamEvent> + Send>>>>
+                + Send
+                + '_,
+        >,
+    > {
         let req = self.build_request(request, true);
         Box::pin(async move {
             let resp = self
@@ -142,7 +148,11 @@ fn parse_anthropic_sse(
                         lines_buf = lines_buf[pos + 2..].to_string();
 
                         // Parse and handle multiple events from one block
-                        let events = parse_sse_block_with_state(&event_block, &mut pending_tool, &mut thinking_content);
+                        let events = parse_sse_block_with_state(
+                            &event_block,
+                            &mut pending_tool,
+                            &mut thinking_content,
+                        );
                         for event in events {
                             let is_done = matches!(event, StreamEvent::Done { .. });
                             if tx.send(event).await.is_err() {
@@ -207,7 +217,8 @@ fn parse_sse_block_with_state(
                                 content_block.get("id").and_then(|i| i.as_str()),
                                 content_block.get("name").and_then(|n| n.as_str()),
                             ) {
-                                *pending_tool = Some((id.to_string(), name.to_string(), String::new()));
+                                *pending_tool =
+                                    Some((id.to_string(), name.to_string(), String::new()));
                             }
                         }
                     }
@@ -222,9 +233,11 @@ fn parse_sse_block_with_state(
                             "text_delta" => {
                                 // Flush thinking before text
                                 if !thinking_content.is_empty() {
-                                    result.push(StreamEvent::BlockComplete(ContentBlock::Thinking {
-                                        thinking: thinking_content.clone(),
-                                    }));
+                                    result.push(StreamEvent::BlockComplete(
+                                        ContentBlock::Thinking {
+                                            thinking: thinking_content.clone(),
+                                        },
+                                    ));
                                     thinking_content.clear();
                                 }
                                 if let Some(text) = delta.get("text").and_then(|t| t.as_str()) {
@@ -234,13 +247,17 @@ fn parse_sse_block_with_state(
                             "input_json_delta" => {
                                 // Accumulate JSON string fragments
                                 if let Some((_id, _name, json_str)) = pending_tool.as_mut() {
-                                    if let Some(partial) = delta.get("partial_json").and_then(|p| p.as_str()) {
+                                    if let Some(partial) =
+                                        delta.get("partial_json").and_then(|p| p.as_str())
+                                    {
                                         json_str.push_str(partial);
                                     }
                                 }
                             }
                             "thinking_delta" => {
-                                if let Some(thinking) = delta.get("thinking").and_then(|t| t.as_str()) {
+                                if let Some(thinking) =
+                                    delta.get("thinking").and_then(|t| t.as_str())
+                                {
                                     thinking_content.push_str(thinking);
                                 }
                             }
@@ -259,7 +276,11 @@ fn parse_sse_block_with_state(
                     serde_json::from_str::<serde_json::Value>(&json_str)
                         .unwrap_or_else(|_| serde_json::json!({}))
                 };
-                result.push(StreamEvent::BlockComplete(ContentBlock::ToolUse { id, name, input }));
+                result.push(StreamEvent::BlockComplete(ContentBlock::ToolUse {
+                    id,
+                    name,
+                    input,
+                }));
             }
         }
         "message_stop" => {
@@ -274,7 +295,8 @@ fn parse_sse_block_with_state(
         }
         "message_delta" => {
             if let Ok(v) = serde_json::from_str::<Value>(&data) {
-                let stop = v.get("delta")
+                let stop = v
+                    .get("delta")
                     .and_then(|d| d.get("stop_reason"))
                     .and_then(|s| s.as_str())
                     .map(String::from);

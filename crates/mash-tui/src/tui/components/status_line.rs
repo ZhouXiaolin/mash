@@ -1,7 +1,53 @@
 use iocraft::prelude::*;
+use serde_json::Value;
 use std::time::Duration;
 
 use crate::tui::{AppContext, AppMessage};
+
+struct TaskLine {
+    text: String,
+    done: bool,
+}
+
+fn parse_taskgraph_lines(content: &str) -> Option<Vec<TaskLine>> {
+    let mut lines = Vec::new();
+    let mut idx = 0usize;
+
+    for raw in content.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let Ok(v) = serde_json::from_str::<Value>(raw) else {
+            continue;
+        };
+        let Some(id) = v.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(desc) = v.get("desc").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(typ) = v.get("type").and_then(Value::as_str) else {
+            continue;
+        };
+        if typ != "inline" && typ != "subagent" {
+            continue;
+        }
+        idx += 1;
+        let done = v.get("done").and_then(Value::as_bool).unwrap_or(false)
+            || matches!(
+                v.get("status").and_then(Value::as_str),
+                Some("done" | "completed" | "success")
+            );
+        let kind = if typ == "inline" {
+            "inline"
+        } else {
+            "subagent"
+        };
+        lines.push(TaskLine {
+            text: format!("{idx} [{kind}] {desc} ({id})"),
+            done,
+        });
+    }
+
+    if lines.is_empty() { None } else { Some(lines) }
+}
 
 /// Animated status line: "思考中" + task progress bar + task file content.
 /// All data comes from daemon via broadcast messages (no direct file access).
@@ -79,9 +125,37 @@ pub fn StatusLine(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     };
 
     let task_body = task_content.read().clone();
-    let body_trimmed = task_body.as_ref().map(|s| s.trim().to_string());
+    let body_trimmed = task_body
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
 
     if let Some(body) = body_trimmed {
+        let parsed_lines = parse_taskgraph_lines(&body);
+        let task_line_views: Vec<AnyElement<'static>> = if let Some(lines) = parsed_lines {
+            lines
+                .into_iter()
+                .map(|line| {
+                    let color = if line.done { Color::Grey } else { Color::Red };
+                    element! {
+                        View(padding_left: 1) {
+                            Text(content: line.text, color: color, align: TextAlign::Left)
+                        }
+                    }
+                    .into_any()
+                })
+                .collect()
+        } else {
+            vec![
+                element! {
+                    View(padding_left: 1) {
+                        Text(content: body.clone(), color: Color::Grey, align: TextAlign::Left)
+                    }
+                }
+                .into_any(),
+            ]
+        };
+
         if is_proc {
             let secs = *elapsed.read();
             let text = format!(
@@ -93,8 +167,8 @@ pub fn StatusLine(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                     View(padding_left: 1) {
                         Text(content: text, color: Color::Yellow, weight: Weight::Bold)
                     }
-                    View(padding_left: 1, margin_top: 1) {
-                        Text(content: body, color: Color::Grey, align: TextAlign::Left)
+                    View(margin_top: 1, flex_direction: FlexDirection::Column, align_items: AlignItems::Start) {
+                        #(task_line_views)
                     }
                 }
             }
@@ -105,8 +179,8 @@ pub fn StatusLine(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                     View(padding_left: 1) {
                         Text(content: text, color: Color::Cyan)
                     }
-                    View(padding_left: 1, margin_top: 1) {
-                        Text(content: body, color: Color::Grey, align: TextAlign::Left)
+                    View(margin_top: 1, flex_direction: FlexDirection::Column, align_items: AlignItems::Start) {
+                        #(task_line_views)
                     }
                 }
             }

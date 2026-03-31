@@ -1,7 +1,67 @@
 use iocraft::prelude::*;
+use std::path::Path;
 
 use crate::tui::pages::main_page::MainPage;
 use crate::tui::{AppContext, AppMessage};
+
+fn file_name_from_path(path: &str) -> String {
+    Path::new(path)
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| path.to_string())
+}
+
+fn extract_quoted_value(input: &str, start: usize) -> Option<(String, usize)> {
+    let bytes = input.as_bytes();
+    if start >= bytes.len() {
+        return None;
+    }
+    let quote = bytes[start];
+    if quote != b'"' && quote != b'\'' {
+        return None;
+    }
+
+    let mut i = start + 1;
+    let mut out = String::new();
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == quote {
+            return Some((out, i + 1));
+        }
+        if b == b'\\' && i + 1 < bytes.len() {
+            out.push(bytes[i + 1] as char);
+            i += 2;
+            continue;
+        }
+        out.push(b as char);
+        i += 1;
+    }
+    None
+}
+
+fn parse_mash_agent_command(cmd: &str) -> Option<(String, Option<String>)> {
+    let marker = "mash agent";
+    let idx = cmd.find(marker)?;
+    let mut i = idx + marker.len();
+    let bytes = cmd.as_bytes();
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    let (user, mut cursor) = extract_quoted_value(cmd, i)?;
+
+    let mut system = None;
+    if let Some(sys_idx_rel) = cmd[cursor..].find("--system") {
+        cursor += sys_idx_rel + "--system".len();
+        while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
+            cursor += 1;
+        }
+        if let Some((sys, _)) = extract_quoted_value(cmd, cursor) {
+            system = Some(sys);
+        }
+    }
+    Some((user, system))
+}
 
 /// Render inline markdown: `code` → bright blue, **bold** → egg-yolk yellow.
 /// Both markers are hidden in the output.
@@ -98,6 +158,7 @@ pub fn App(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let stdout_msgs = stdout.clone();
     hooks.use_future(async move {
         let mut rx = ui_sender.subscribe();
+        let mut last_tool_name: Option<String> = None;
         while let Ok(msg) = rx.recv().await {
             match msg {
                 AppMessage::UserMessage(text) => {
@@ -107,47 +168,52 @@ pub fn App(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                     stdout_msgs.println(highlight_inline_code(&line));
                 }
                 AppMessage::ToolCall { name, description } => {
-                    let label = if name == "bash" { "Bash" } else { &name };
-                    if description.is_empty() {
-                        stdout_msgs.println(format!("\x1b[32m⏺ {}()\x1b[0m", label));
-                    } else {
-                        let term_width = crossterm::terminal::size()
-                            .map(|(w, _)| w as usize)
-                            .unwrap_or(80);
-                        let lines: Vec<&str> = description.lines().collect();
-                        let prefix = format!("⏺ {}(", label);
-                        let indent_width = prefix.chars().count();
-                        let padding = " ".repeat(indent_width);
-
-                        let truncate = |s: &str, max: usize| -> String {
-                            if s.chars().count() <= max {
-                                s.to_string()
-                            } else {
-                                let truncated: String =
-                                    s.chars().take(max.saturating_sub(1)).collect();
-                                format!("{}…", truncated)
-                            }
-                        };
-
-                        let first_avail = term_width.saturating_sub(indent_width + 1);
-                        let rest_avail = term_width.saturating_sub(indent_width + 1);
-
-                        let mut output =
-                            format!("\x1b[32m{}{}", prefix, truncate(lines[0], first_avail));
-                        for line in &lines[1..] {
-                            output.push('\n');
-                            output.push_str(&format!(
-                                "\x1b[32m{}{}",
-                                padding,
-                                truncate(line, rest_avail)
-                            ));
+                    last_tool_name = Some(name.clone());
+                    match name.as_str() {
+                        "write" => {
+                            let file = file_name_from_path(&description);
+                            stdout_msgs.println(format!("\x1b[32m⏺ Write({})\x1b[0m", file));
                         }
-                        output.push_str(")\x1b[0m");
-                        stdout_msgs.println(output);
+                        "read" => {
+                            let file = file_name_from_path(&description);
+                            stdout_msgs.println(format!("\x1b[32m⏺ Read({})\x1b[0m", file));
+                        }
+                        "edit" => {
+                            let file = file_name_from_path(&description);
+                            stdout_msgs.println(format!("\x1b[32m⏺ Edit({})\x1b[0m", file));
+                        }
+                        "bash" => {
+                            if let Some((user, system)) = parse_mash_agent_command(&description) {
+                                match system {
+                                    Some(system) => stdout_msgs.println(format!(
+                                        "\x1b[32m⏺ Agent(user={}, system={})\x1b[0m",
+                                        user, system
+                                    )),
+                                    None => stdout_msgs
+                                        .println(format!("\x1b[32m⏺ Agent(user={})\x1b[0m", user)),
+                                }
+                            } else if description.is_empty() {
+                                stdout_msgs.println("\x1b[32m⏺ Bash()\x1b[0m");
+                            } else {
+                                stdout_msgs
+                                    .println(format!("\x1b[32m⏺ Bash({})\x1b[0m", description));
+                            }
+                        }
+                        _ => {
+                            if description.is_empty() {
+                                stdout_msgs.println(format!("\x1b[32m⏺ {}()\x1b[0m", name));
+                            } else {
+                                stdout_msgs
+                                    .println(format!("\x1b[32m⏺ {}({})\x1b[0m", name, description));
+                            }
+                        }
                     }
                 }
                 AppMessage::ToolResult { preview } => {
-                    stdout_msgs.println(format!("\x1b[33m✓ {}\x1b[0m", preview));
+                    let skip = matches!(last_tool_name.as_deref(), Some("read" | "write" | "edit"));
+                    if !skip {
+                        stdout_msgs.println(format!("\x1b[33m✓ {}\x1b[0m", preview));
+                    }
                 }
                 AppMessage::AgentError(e) => {
                     stdout_msgs.println(format!("\x1b[31mError: {}\x1b[0m", e));
@@ -169,7 +235,11 @@ pub fn App(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                     } else {
                         stdout_msgs.println("\x1b[1mMCP servers:\x1b[0m");
                         for s in &servers {
-                            stdout_msgs.println(format!("  \x1b[33m{}\x1b[0m ({} tools)", s.name, s.tools.len()));
+                            stdout_msgs.println(format!(
+                                "  \x1b[33m{}\x1b[0m ({} tools)",
+                                s.name,
+                                s.tools.len()
+                            ));
                             for tool in &s.tools {
                                 stdout_msgs.println(format!("    - {tool}"));
                             }

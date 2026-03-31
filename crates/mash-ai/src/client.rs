@@ -19,5 +19,11 @@ pub trait LlmClient: Send + Sync {
     fn stream(
         &self,
         request: &LlmRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<Pin<Box<dyn Stream<Item = StreamEvent> + Send>>>> + Send + '_>>;
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<Pin<Box<dyn Stream<Item = StreamEvent> + Send>>>>
+                + Send
+                + '_,
+        >,
+    >;
 }

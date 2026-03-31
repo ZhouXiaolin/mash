@@ -1,10 +1,10 @@
 // crates/mash-agent/tests/deepseek.rs
 use std::sync::Arc;
 
+use mash_agent::{AgentContext, AgentTool, ToolResult, run, run_streaming};
 use mash_ai::anthropic::{AnthropicBackend, AnthropicConfig};
 use mash_ai::openai::{OpenAiBackend, OpenAiConfig};
 use mash_ai::{Message, MessageContent, Role};
-use mash_agent::{run, run_streaming, AgentContext, AgentTool, ToolResult};
 use serde_json::json;
 use std::pin::Pin;
 use tokio::sync::Mutex;
@@ -224,6 +224,9 @@ async fn openai_reasoner_basic() {
         }
     }
 
-    assert!(got_content, "Should have received text or thinking response");
+    assert!(
+        got_content,
+        "Should have received text or thinking response"
+    );
     assert!(got_end, "Should have received AgentEnd");
 }

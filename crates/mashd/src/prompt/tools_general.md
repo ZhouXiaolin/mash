@@ -1,22 +1,46 @@
-## Tools (bash)
+## Tools
 
-你可以使用一个工具：**bash**。它会在本机执行命令并返回 stdout/stderr。对本地环境的一切可执行操作都通过它完成（读写文件、搜索信息、运行脚本、发起网络请求等）。
+你可以使用四个 coding tools：
 
-### 常用命令约定
+1. `read`
+   - Schema:
+     - `path: string`
+     - `offset?: number`（1-indexed 起始行）
+     - `limit?: number`（最多读取行数）
+   - 描述：
+     - 读取文件内容，支持文本和图片。
+     - 文本默认截断到 200 行或 100KB；内容过大时，用 `offset/limit` 分段读取。
+     - 图片返回 base64，并自动缩放到不超过 2000x2000。
 
-- **读取**：优先用能定位行号/范围的方式，便于精确引用或修改  
-  - `sed -n 'START,ENDp' file` / `nl -ba file | sed -n 'START,ENDp'`
-  - `cat file | head -n N` / `tail -n N`
-- **搜索**：优先 `rg`（更快、更准确）  
-  - `rg -n "pattern" path`（带行号）  
-  - `rg -n --glob "*.rs" "pattern" src`
-- **编辑/变更**：优先小范围、可回退的改动  
-  - `perl -i -pe 's/old/new/' file`（谨慎使用，先 `rg` 确认命中范围）  
-  - 复杂变更用短脚本：`python - <<'PY' ... PY` 或 `perl - <<'PL' ... PL`
-- **验证**：优先用可复现的方式验证结果（命令、对比输出、最小用例）；如果是项目代码改动，运行项目的 lint/typecheck/test/build（以仓库脚本为准）
-- **网络**：需要访问本机服务或外部 API 时使用 `curl`（注意避免在输出中泄露敏感信息）
+2. `write`
+   - Schema:
+     - `path: string`
+     - `content: string`
+   - 描述：
+     - 写入文件；不存在则创建，存在则覆盖；自动创建父目录。
+     - 同一路径写操作会被串行化。
 
-### 运行策略
+3. `edit`
+   - Schema:
+     - `path: string`
+     - `edits: [{ oldText: string, newText: string }]`
+   - 描述：
+     - 对单文件做精确文本替换。
+     - 所有 `oldText` 基于原始文件匹配（非增量）；每个 `oldText` 必须唯一且不重叠。
+     - 多处修改应合并到同一次 `edit` 调用。
+     - 返回 unified diff 和变更行号。
 
-- 尽量避免长时间挂起的命令；必要时限制输出（`head`、`--max-count`）或聚焦目录/类型。
-- 命令失败时：先读错误输出、定位触发文件/行，再做最小修复并复跑验证。
+4. `bash`
+   - Schema:
+     - `command: string`
+     - `timeout?: number`（秒）
+   - 描述：
+     - 在当前工作目录执行 bash 命令。
+     - 输出截断到最后 200 行或 100KB；超出部分保存到临时文件。
+     - 支持超时；非零退出码会返回错误。
+
+### 使用策略
+
+- 文件读取优先 `read`，文件写入优先 `write`，文本替换优先 `edit`。
+- 只有在需要执行命令（构建、测试、搜索、脚本、外部程序）时才使用 `bash`。
+- 完成代码改动后，优先用可复现命令验证（例如 check/test/build）。

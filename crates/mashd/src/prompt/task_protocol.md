@@ -1,51 +1,91 @@
+## TaskGraph Protocol (JSONL + TaskNode)
 
-## Task List Protocol — Four Bash Tasks
+**TaskGraph directory (store files under this folder):**
+`{task_dir}`
 
-**Task file path (use in every bash command below):**
-`{path_str}`
+当目标需要多步推进（尤其是并行子任务）时，使用 TaskGraph 管理执行。简单问题不必创建 TaskGraph。
 
-当目标需要多步推进（例如需要多轮验证/排错）时，用任务列表管理进度；简单问题不必创建清单。
+TaskGraph 以 **JSONL** 保存，每行一个 TaskNode。不要在回复正文里粘贴完整文件内容；UI 会从该目录下最新文件读取并展示。
 
-任务列表通过调用 **bash** 工具写入/更新任务文件完成。不要在回复正文里输出任务文件内容；UI 会从任务文件读取并展示。
+在每一轮需要 TaskGraph 时，先在该目录下生成一个新文件名（例如 `taskgraph_<timestamp>.jsonl`），并在本轮后续读写中始终使用同一文件。
 
 ---
 
-**1. TaskCreate** — 创建任务列表  
-在需要任务列表时调用一次：把清单写入任务文件（编号行 `- [ ] 1. ...`，每步一行）。
+### TaskNode Schema
+
+每个 TaskNode 必须包含：
+
+- `id`: string，唯一标识（如 `task_1`）
+- `desc`: string，任务描述
+- `depen`: string[]，依赖任务 ID 列表，可为空
+- `type`: `"inline"` 或 `"subagent"`
+
+其中：
+
+- `inline`：由当前主会话直接执行（串行）。
+- `subagent`：必须通过 **bash** 启动子代理执行，即运行  
+  `mash agent "<任务描述>"`  
+  如需附加规则：`mash agent "<任务描述>" --system "<附加指令>"`。
+
+---
+
+### 1. TaskGraphCreate
+
+需要多步骤任务时，先确定本轮文件路径，再调用 `write` 创建 TaskGraph JSONL。
 
 Example:
-cat << 'EOF' > "{path_str}"
-# Tasks
-
-- [ ] 1. First step description
-- [ ] 2. Second step description
-- [ ] 3. Third step
-EOF
+write({
+  "path": "{task_dir}/taskgraph_1710000000.jsonl",
+  "content": "{\"id\":\"task_1\",\"desc\":\"明确目标\",\"depen\":[],\"type\":\"inline\"}\n{\"id\":\"task_2\",\"desc\":\"并行调研方案A\",\"depen\":[\"task_1\"],\"type\":\"subagent\"}\n{\"id\":\"task_3\",\"desc\":\"并行调研方案B\",\"depen\":[\"task_1\"],\"type\":\"subagent\"}\n{\"id\":\"task_4\",\"desc\":\"汇总并决策\",\"depen\":[\"task_2\",\"task_3\"],\"type\":\"inline\"}\n"
+})
 
 ---
 
-**2. TaskUpdate** — 更新任务状态  
-Call when a step is completed: mark item N as done (replace N with the step number).
+### 2. TaskGraphUpdate
 
-{perl_cmd}
+当拆分方案变化时，使用 `read` + `edit` 修改 TaskGraph（尽量一次 edit 完成多处变更）。
 
-(Replace N in the perl script with the actual step number, e.g. 3 for step 3.)
-
----
-
-**3. TaskList** — 列出所有任务  
-Call to list all tasks (show the current task file content).
-
-cat "{path_str}"
-
----
-
-**4. TaskGet** — 获取任务详情  
-Call to get full content or a specific part of the task file (e.g. grep for one line).
-
-cat "{path_str}"
-# or e.g. grep "^\- " "{path_str}" for checklist lines only
+Example flow:
+1) read({
+  "path": "{task_dir}/taskgraph_1710000000.jsonl"
+})
+2) edit({
+  "path": "{task_dir}/taskgraph_1710000000.jsonl",
+  "edits": [
+    {
+      "oldText": "{\"id\":\"task_3\",\"desc\":\"并行调研方案B\",\"depen\":[\"task_1\"],\"type\":\"subagent\"}",
+      "newText": "{\"id\":\"task_3\",\"desc\":\"并行调研方案B（缩小范围）\",\"depen\":[\"task_1\"],\"type\":\"subagent\"}"
+    }
+  ]
+})
 
 ---
 
-Use TaskCreate only when needed; use TaskUpdate when a step is done; use TaskList/TaskGet when you need to read the current list. The UI monitors the file and refreshes automatically.
+### 3. TaskGraphList
+
+调用 `read` 查看当前 TaskGraph。
+
+read({
+  "path": "{task_dir}/taskgraph_1710000000.jsonl"
+})
+
+---
+
+### 4. TaskGraphGet
+
+调用 `read` 的 `offset/limit` 分段查看大图。
+
+read({
+  "path": "{task_dir}/taskgraph_1710000000.jsonl",
+  "offset": 1,
+  "limit": 80
+})
+
+---
+
+### 执行约束
+
+- 只在依赖满足时执行节点（DAG，无环）。
+- 避免多个同时就绪的 `inline` 节点；主会话只能串行处理。
+- 可并行工作优先建为 `subagent` 节点。
+- 遇到 `subagent` 节点时，使用 bash 启动 `mash agent ...` 执行，并在拿到结果后继续推进后续节点。

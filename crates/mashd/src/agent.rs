@@ -1,9 +1,10 @@
-use std::path::PathBuf;use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::Result;
-use mash_agent::{run, AgentContext, AgentEvent as CoreAgentEvent};
-use mash_ai::anthropic::{AnthropicBackend, AnthropicConfig};
+use mash_agent::{AgentContext, AgentEvent as CoreAgentEvent, run};
 use mash_ai::Message;
+use mash_ai::anthropic::{AnthropicBackend, AnthropicConfig};
 use serde_json::Value;
 use tokio::sync::{Mutex, mpsc};
 use tokio_stream::StreamExt;
@@ -80,6 +81,7 @@ fn adapt_event(core_event: &CoreAgentEvent, tx: &mpsc::UnboundedSender<AgentEven
 fn tool_call_description(name: &str, input: &Value) -> String {
     match name {
         "bash" => input["command"].as_str().unwrap_or("").to_string(),
+        "read" | "write" | "edit" => input["path"].as_str().unwrap_or("").to_string(),
         _ => String::new(),
     }
 }

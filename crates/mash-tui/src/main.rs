@@ -93,7 +93,9 @@ fn pid_path() -> PathBuf {
 fn kill_daemon() {
     if let Ok(pid_str) = std::fs::read_to_string(pid_path()) {
         if let Ok(pid) = pid_str.trim().parse::<u32>() {
-            let _ = std::process::Command::new("kill").arg(pid.to_string()).output();
+            let _ = std::process::Command::new("kill")
+                .arg(pid.to_string())
+                .output();
         }
     }
     // Clean up socket so auto_start_daemon can bind
@@ -119,7 +121,11 @@ async fn main() -> Result<()> {
         Some(Commands::Sessions { action }) => match action {
             SessionAction::List => cmd_sessions_list().await,
         },
-        Some(Commands::Msg { session_id, text, from }) => cmd_msg(&session_id, &text.join(" "), from.as_deref()).await,
+        Some(Commands::Msg {
+            session_id,
+            text,
+            from,
+        }) => cmd_msg(&session_id, &text.join(" "), from.as_deref()).await,
         Some(Commands::Agent { prompt, system }) => cmd_agent(&prompt, system.as_deref()).await,
     }
 }
@@ -394,7 +400,14 @@ async fn connect_headless(
         .unwrap_or_default()
         .to_string_lossy()
         .into_owned();
-    send_client_msg(&mut writer, &ClientMessage::Init { cwd, headless: true }).await?;
+    send_client_msg(
+        &mut writer,
+        &ClientMessage::Init {
+            cwd,
+            headless: true,
+        },
+    )
+    .await?;
 
     Ok((lines, writer))
 }

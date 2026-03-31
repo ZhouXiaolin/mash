@@ -199,7 +199,12 @@ async fn run_fibonacci_test(
         StreamingMode::NonStreaming => "NonStreaming",
     };
 
-    println!("=== {} + {} + {} ===\n", backend_name, mode_name, model.as_str());
+    println!(
+        "=== {} + {} + {} ===\n",
+        backend_name,
+        mode_name,
+        model.as_str()
+    );
     println!("Work directory: {}\n", work_dir.display());
 
     let mut events = match streaming_mode {

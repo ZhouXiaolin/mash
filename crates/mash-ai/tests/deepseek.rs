@@ -1,21 +1,19 @@
 // crates/mash-ai/tests/deepseek.rs
-use mash_ai::openai::{OpenAiBackend, OpenAiConfig};
 use mash_ai::anthropic::{AnthropicBackend, AnthropicConfig};
+use mash_ai::openai::{OpenAiBackend, OpenAiConfig};
 use mash_ai::{LlmClient, LlmRequest, Message, MessageContent, Role};
 
 fn openai_backend() -> OpenAiBackend {
     OpenAiBackend::new(OpenAiConfig {
         base_url: "https://api.deepseek.com".to_string(),
-        api_key: std::env::var("DEEPSEEK_API_KEY")
-            .unwrap_or_else(|_| "sk-test".to_string()),
+        api_key: std::env::var("DEEPSEEK_API_KEY").unwrap_or_else(|_| "sk-test".to_string()),
     })
 }
 
 fn anthropic_backend() -> AnthropicBackend {
     AnthropicBackend::new(AnthropicConfig {
         base_url: "https://api.deepseek.com/anthropic".to_string(),
-        api_key: std::env::var("DEEPSEEK_API_KEY")
-            .unwrap_or_else(|_| "sk-test".to_string()),
+        api_key: std::env::var("DEEPSEEK_API_KEY").unwrap_or_else(|_| "sk-test".to_string()),
     })
 }
 

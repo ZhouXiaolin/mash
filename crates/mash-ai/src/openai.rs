@@ -2,11 +2,11 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use bytes::Bytes;
 use futures_core::Stream;
 use reqwest::Client;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 
@@ -240,7 +240,13 @@ impl LlmClient for OpenAiBackend {
     fn stream(
         &self,
         request: &LlmRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<Pin<Box<dyn Stream<Item = StreamEvent> + Send>>>> + Send + '_>> {
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<Pin<Box<dyn Stream<Item = StreamEvent> + Send>>>>
+                + Send
+                + '_,
+        >,
+    > {
         let messages = to_openai_messages(&request.system, &request.messages);
         let tools = to_openai_tools(&request.tools);
         let model = request.model.clone();
@@ -325,9 +331,11 @@ fn parse_openai_sse(
                             }
                             // Flush reasoning content as Thinking block
                             if !reasoning_content.is_empty() {
-                                let _ = tx.send(StreamEvent::BlockComplete(ContentBlock::Thinking {
-                                    thinking: reasoning_content.clone(),
-                                })).await;
+                                let _ = tx
+                                    .send(StreamEvent::BlockComplete(ContentBlock::Thinking {
+                                        thinking: reasoning_content.clone(),
+                                    }))
+                                    .await;
                                 reasoning_content.clear();
                             }
                             let _ = tx.send(StreamEvent::Done { stop_reason: None }).await;
@@ -348,9 +356,11 @@ fn parse_openai_sse(
                         {
                             // Flush reasoning content before tool calls
                             if !reasoning_content.is_empty() {
-                                let _ = tx.send(StreamEvent::BlockComplete(ContentBlock::Thinking {
-                                    thinking: reasoning_content.clone(),
-                                })).await;
+                                let _ = tx
+                                    .send(StreamEvent::BlockComplete(ContentBlock::Thinking {
+                                        thinking: reasoning_content.clone(),
+                                    }))
+                                    .await;
                                 reasoning_content.clear();
                             }
                             for tc in tool_calls {
@@ -358,14 +368,16 @@ fn parse_openai_sse(
                                 if let Some(id) = tc.get("id").and_then(|i| i.as_str()) {
                                     // Flush previous tool call
                                     if !current_tool_id.is_empty() {
-                                        let input: Value =
-                                            serde_json::from_str(&current_tool_args).unwrap_or(json!({}));
+                                        let input: Value = serde_json::from_str(&current_tool_args)
+                                            .unwrap_or(json!({}));
                                         let _ = tx
-                                            .send(StreamEvent::BlockComplete(ContentBlock::ToolUse {
-                                                id: current_tool_id.clone(),
-                                                name: current_tool_name.clone(),
-                                                input,
-                                            }))
+                                            .send(StreamEvent::BlockComplete(
+                                                ContentBlock::ToolUse {
+                                                    id: current_tool_id.clone(),
+                                                    name: current_tool_name.clone(),
+                                                    input,
+                                                },
+                                            ))
                                             .await;
                                     }
                                     current_tool_id = id.to_string();
@@ -413,9 +425,11 @@ fn parse_openai_sse(
                             }
                             // Flush reasoning content
                             if !reasoning_content.is_empty() {
-                                let _ = tx.send(StreamEvent::BlockComplete(ContentBlock::Thinking {
-                                    thinking: reasoning_content.clone(),
-                                })).await;
+                                let _ = tx
+                                    .send(StreamEvent::BlockComplete(ContentBlock::Thinking {
+                                        thinking: reasoning_content.clone(),
+                                    }))
+                                    .await;
                                 reasoning_content.clear();
                             }
                             let _ = tx
@@ -433,7 +447,8 @@ fn parse_openai_sse(
                             .and_then(|c| c.get("delta"))
                         {
                             // Reasoning content delta (DeepSeek Reasoner)
-                            if let Some(r) = delta.get("reasoning_content").and_then(|c| c.as_str()) {
+                            if let Some(r) = delta.get("reasoning_content").and_then(|c| c.as_str())
+                            {
                                 if !r.is_empty() {
                                     reasoning_content.push_str(r);
                                 }
@@ -468,9 +483,11 @@ fn parse_openai_sse(
         }
         // Flush remaining reasoning content
         if !reasoning_content.is_empty() {
-            let _ = tx.send(StreamEvent::BlockComplete(ContentBlock::Thinking {
-                thinking: reasoning_content,
-            })).await;
+            let _ = tx
+                .send(StreamEvent::BlockComplete(ContentBlock::Thinking {
+                    thinking: reasoning_content,
+                }))
+                .await;
         }
     });
 
