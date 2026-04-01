@@ -1,5 +1,4 @@
-/// Internal protocol version. Bump this when daemon/client wire format changes.
-pub const PROTOCOL_VERSION: u32 = 1;
+include!(concat!(env!("OUT_DIR"), "/protocol_version.rs"));
 
 pub mod agent;
 pub mod config;
